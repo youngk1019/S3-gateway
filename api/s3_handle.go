@@ -170,7 +170,7 @@ func S3Handler(c *gin.Context) {
 			params.Set("start-after", startAfter)
 		}
 		if c.Request.Header.Get("x-amz-copy-source") != "" {
-			copySource := "workplace/" + c.Value(vars.UIDKey).(string) + "/" + c.Request.Header.Get("x-amz-copy-source")
+			copySource := vars.Bucket + "/workplace/" + c.Value(vars.UIDKey).(string) + "/" + c.Request.Header.Get("x-amz-copy-source")
 			c.Request.Header.Del("x-amz-copy-source")
 			c.Request.Header.Set("x-amz-copy-source", copySource)
 		}
