@@ -109,54 +109,70 @@ func S3Handler(c *gin.Context) {
 			object = "public/" + object
 		}
 
-		ret = strings.Split(params.Get("prefix"), "/")
-		if ret[0] != "" {
-			check := false
-			for _, u := range dataSets {
-				if u == ret[0] {
-					check = true
-					break
+		if params.Has("prefix") {
+			ret = strings.Split(params.Get("prefix"), "/")
+			if ret[0] != "" {
+				check := false
+				for _, u := range dataSets {
+					if u == ret[0] {
+						check = true
+						break
+					}
 				}
-			}
-			if check == false {
-				c.String(http.StatusUnauthorized, "Do not have permission for this dataset: "+ret[0])
-				return
+				if check == false {
+					c.String(http.StatusUnauthorized, "Do not have permission for this dataset: "+ret[0])
+					return
+				}
 			}
 			prefix := "public/" + params.Get("prefix")
 			params.Del("prefix")
 			params.Set("prefix", prefix)
 		}
 
-		ret = strings.Split(params.Get("start-after"), "/")
-		if ret[0] != "" {
-			check := false
-			for _, u := range dataSets {
-				if u == ret[0] {
-					check = true
-					break
+		if params.Has("start-after") {
+			ret = strings.Split(params.Get("start-after"), "/")
+			if ret[0] != "" {
+				check := false
+				for _, u := range dataSets {
+					if u == ret[0] {
+						check = true
+						break
+					}
 				}
-			}
-			if check == false {
-				c.String(http.StatusUnauthorized, "Do not have permission for this dataset: "+ret[0])
-				return
+				if check == false {
+					c.String(http.StatusUnauthorized, "Do not have permission for this dataset: "+ret[0])
+					return
+				}
 			}
 			startAfter := "public/" + params.Get("start-after")
 			params.Del("start-after")
 			params.Set("start-after", startAfter)
 		}
+
+		if c.Request.Header.Get("x-amz-copy-source") != "" {
+			copySource := "public/" + c.Request.Header.Get("x-amz-copy-source")
+			c.Request.Header.Del("x-amz-copy-source")
+			c.Request.Header.Set("x-amz-copy-source", copySource)
+		}
+
 	} else {
 		if object != "" {
 			object = "workplace/" + c.Value(vars.UIDKey).(string) + "/" + object
 		}
-		if params.Get("prefix") != "" {
+		if params.Has("prefix") {
 			prefix := "workplace/" + c.Value(vars.UIDKey).(string) + "/" + params.Get("prefix")
 			params.Del("prefix")
 			params.Set("prefix", prefix)
 		}
-		if params.Get("start-after") != "" {
+		if params.Has("start-after") {
 			startAfter := "workplace/" + c.Value(vars.UIDKey).(string) + "/" + params.Get("start-after")
 			params.Del("start-after")
 			params.Set("start-after", startAfter)
+		}
+		if c.Request.Header.Get("x-amz-copy-source") != "" {
+			copySource := "workplace/" + c.Value(vars.UIDKey).(string) + "/" + c.Request.Header.Get("x-amz-copy-source")
+			c.Request.Header.Del("x-amz-copy-source")
+			c.Request.Header.Set("x-amz-copy-source", copySource)
 		}
 	}
 	c.Request.Header.Del(vars.PublicKey)
