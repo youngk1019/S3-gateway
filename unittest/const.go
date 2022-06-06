@@ -1,0 +1,5 @@
+package unittest
+
+const (
+	jwtToken = "eyJhbGciOiJIUzUxMiJ9.eyJrZXlfdV9uYW1lIjoiNzkyNjAyNTIwQHFxLmNvbSIsImtleV91aWQiOiJmMzg0MmI2OTQ4YzM0MDYzODU2ODNkODIzNmI4MzExMiIsImxvZ2luX3VzZXJfa2V5IjoiMjQ4YmQzYmEtZjFkNC00MWNiLWIzNjUtZGQyMDNlNjMyNjkzIn0.j4tRe000k8zDjpLN7UY9kACO-OS-1cKVIh-Egy-j714CIlJp8Utfq2c-mX4-Nsr8h0RI_VuMqgKLoO0bHJKIkg"
+)
