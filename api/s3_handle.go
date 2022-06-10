@@ -185,6 +185,16 @@ func S3Handler(c *gin.Context) {
 		c.Request.Header.Set("x-amz-copy-source", copySource)
 	}
 
+	if params.Has("is-exist") {
+		_, err := client.StatObject(c, vars.Bucket, object, minio.StatObjectOptions{})
+		if err != nil {
+			c.String(http.StatusOK, "text/plain", "false")
+		} else {
+			c.String(http.StatusOK, "text/plain", "true")
+		}
+		return
+	}
+
 	if (method == http.MethodPut && !params.Has("uploadId")) || (method == http.MethodPost && params.Has("uploadId")) {
 		dirs := full_path.SplitFullPath(fp)
 		for i, u := range dirs {
@@ -373,14 +383,6 @@ func S3Handler(c *gin.Context) {
 	//		c.Writer.Header().Add(k, v)
 	//	}
 	//}
-	if method == http.MethodHead {
-		if resp.StatusCode == http.StatusOK {
-			c.String(http.StatusOK, "text/plain", "true")
-		} else {
-			c.String(http.StatusOK, "text/plain", "false")
-		}
-		return
-	}
 
 	header := make(map[string]string)
 	for k, _ := range resp.Header {
