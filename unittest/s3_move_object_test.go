@@ -280,6 +280,16 @@ func TestS3Handler_RecursiveMoveObjects(t *testing.T) {
 		})
 
 	r = gofight.New()
+	r.GET("/s3/test/").
+		SetHeader(gofight.H{
+			vars.JWTHeader: "Bearer " + jwtToken,
+		}).
+		Run(routers.GetRouter(), func(r gofight.HTTPResponse, rq gofight.HTTPRequest) {
+			println(r.Body.String())
+			assert.Equal(t, r.Code, http.StatusNotFound)
+		})
+
+	r = gofight.New()
 	r.GET("/s3/test2/1.txt").
 		SetHeader(gofight.H{
 			vars.JWTHeader: "Bearer " + jwtToken,
@@ -326,6 +336,15 @@ func TestS3Handler_RecursiveMoveObjects(t *testing.T) {
 
 	r = gofight.New()
 	r.GET("/s3/test/2.txt").
+		SetHeader(gofight.H{
+			vars.JWTHeader: "Bearer " + jwtToken,
+		}).
+		Run(routers.GetRouter(), func(r gofight.HTTPResponse, rq gofight.HTTPRequest) {
+			assert.Equal(t, r.Code, http.StatusNotFound)
+		})
+
+	r = gofight.New()
+	r.GET("/s3/test/").
 		SetHeader(gofight.H{
 			vars.JWTHeader: "Bearer " + jwtToken,
 		}).

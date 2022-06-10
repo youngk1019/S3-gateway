@@ -292,9 +292,9 @@ func S3Handler(c *gin.Context) {
 		}
 
 		if strings.HasSuffix(object, "/") {
-			_, err := client.StatObject(c, vars.Bucket, copySrc, minio.StatObjectOptions{})
+			_, err := client.StatObject(c, vars.Bucket, object, minio.StatObjectOptions{})
 			if err != nil {
-				_, err := client.PutObject(c, vars.Bucket, copySrc, nil, 0, minio.PutObjectOptions{})
+				_, err := client.PutObject(c, vars.Bucket, object, nil, 0, minio.PutObjectOptions{})
 				if err != nil {
 					log.Errorw("put object", vars.UUIDKey, c.Value(vars.UUIDKey), "error", err.Error())
 					c.String(http.StatusBadGateway, "gateway put object")
@@ -443,5 +443,6 @@ func recursiveDelete(ctx context.Context, client *minio.Client, prefix string, d
 		log.Errorw("s3 gateway recursive delete list objects error", vars.UUIDKey, ctx.Value(vars.UUIDKey), "error", err.Error())
 		return err
 	}
+
 	return nil
 }
