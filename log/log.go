@@ -45,7 +45,6 @@ func InitLogger() {
 	}
 
 	var writers []zapcore.WriteSyncer
-	writers = append(writers, zapcore.AddSync(lumberJackLogger)) // writer
 	if !vars.UnitTest {
 		writers = append(writers, zapcore.AddSync(lumberJackLogger)) // writer
 	}

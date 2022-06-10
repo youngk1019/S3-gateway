@@ -6,7 +6,6 @@ import (
 )
 
 func Test_GenListObjectsResult(t *testing.T) {
-	ret, err := GenListObjectsResult([]string{"BasicDataset"})
+	_, err := GenListObjectsResult([]string{"BasicDataset"})
 	assert.Equal(t, err, nil)
-	println(string(ret))
 }

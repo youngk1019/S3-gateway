@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-func TestS3Handler_CopyObject(t *testing.T) {
+func TestS3Handler_MoveObjects(t *testing.T) {
 	vars.UnitTest = true
 	vars.Debug = true
 	log.InitLogger()
@@ -24,7 +24,7 @@ func TestS3Handler_CopyObject(t *testing.T) {
 	md5Hash.Write([]byte(body))
 
 	r := gofight.New()
-	r.PUT("/s3/1.txt").
+	r.PUT("/s3/test/aa").
 		SetHeader(gofight.H{
 			vars.JWTHeader: "Bearer " + jwtToken,
 		}).
@@ -34,7 +34,7 @@ func TestS3Handler_CopyObject(t *testing.T) {
 		})
 
 	r = gofight.New()
-	r.GET("/s3/1.txt").
+	r.GET("/s3/test/aa").
 		SetHeader(gofight.H{
 			vars.JWTHeader: "Bearer " + jwtToken,
 		}).
@@ -46,29 +46,17 @@ func TestS3Handler_CopyObject(t *testing.T) {
 		})
 
 	r = gofight.New()
-	r.PUT("/s3/2.txt").
+	r.PUT("/s3/test/bb").
 		SetHeader(gofight.H{
 			vars.JWTHeader:      "Bearer " + jwtToken,
-			"x-amz-copy-source": "1.txt",
+			"x-amz-copy-source": "test/aa",
 		}).
 		Run(routers.GetRouter(), func(r gofight.HTTPResponse, rq gofight.HTTPRequest) {
 			assert.Equal(t, r.Code, http.StatusOK)
 		})
 
 	r = gofight.New()
-	r.GET("/s3/1.txt").
-		SetHeader(gofight.H{
-			vars.JWTHeader: "Bearer " + jwtToken,
-		}).
-		Run(routers.GetRouter(), func(r gofight.HTTPResponse, rq gofight.HTTPRequest) {
-			assert.Equal(t, r.Code, http.StatusOK)
-			md5Hash2 := md5.New()
-			md5Hash2.Write(r.Body.Bytes())
-			assert.Equal(t, md5Hash2.Sum(nil), md5Hash.Sum(nil))
-		})
-
-	r = gofight.New()
-	r.GET("/s3/2.txt").
+	r.GET("/s3/test/aa").
 		SetHeader(gofight.H{
 			vars.JWTHeader: "Bearer " + jwtToken,
 		}).
@@ -80,25 +68,32 @@ func TestS3Handler_CopyObject(t *testing.T) {
 		})
 
 	r = gofight.New()
-	r.DELETE("/s3/1.txt").
+	r.GET("/s3/test/bb").
 		SetHeader(gofight.H{
 			vars.JWTHeader: "Bearer " + jwtToken,
 		}).
 		Run(routers.GetRouter(), func(r gofight.HTTPResponse, rq gofight.HTTPRequest) {
-			assert.Equal(t, r.Code, http.StatusNoContent)
+			assert.Equal(t, r.Code, http.StatusOK)
+			md5Hash2 := md5.New()
+			md5Hash2.Write(r.Body.Bytes())
+			assert.Equal(t, md5Hash2.Sum(nil), md5Hash.Sum(nil))
 		})
 
 	r = gofight.New()
-	r.DELETE("/s3/2.txt").
+	r.PUT("/s3/test/cc").
 		SetHeader(gofight.H{
-			vars.JWTHeader: "Bearer " + jwtToken,
+			vars.JWTHeader:      "Bearer " + jwtToken,
+			"x-amz-copy-source": "test/aa",
+		}).
+		SetQuery(gofight.H{
+			"move": "",
 		}).
 		Run(routers.GetRouter(), func(r gofight.HTTPResponse, rq gofight.HTTPRequest) {
-			assert.Equal(t, r.Code, http.StatusNoContent)
+			assert.Equal(t, r.Code, http.StatusOK)
 		})
 
 	r = gofight.New()
-	r.GET("/s3/1.txt").
+	r.GET("/s3/test/aa").
 		SetHeader(gofight.H{
 			vars.JWTHeader: "Bearer " + jwtToken,
 		}).
@@ -107,7 +102,60 @@ func TestS3Handler_CopyObject(t *testing.T) {
 		})
 
 	r = gofight.New()
-	r.GET("/s3/2.txt").
+	r.GET("/s3/test/bb").
+		SetHeader(gofight.H{
+			vars.JWTHeader: "Bearer " + jwtToken,
+		}).
+		Run(routers.GetRouter(), func(r gofight.HTTPResponse, rq gofight.HTTPRequest) {
+			assert.Equal(t, r.Code, http.StatusOK)
+			md5Hash2 := md5.New()
+			md5Hash2.Write(r.Body.Bytes())
+			assert.Equal(t, md5Hash2.Sum(nil), md5Hash.Sum(nil))
+		})
+
+	r = gofight.New()
+	r.GET("/s3/test/cc").
+		SetHeader(gofight.H{
+			vars.JWTHeader: "Bearer " + jwtToken,
+		}).
+		Run(routers.GetRouter(), func(r gofight.HTTPResponse, rq gofight.HTTPRequest) {
+			assert.Equal(t, r.Code, http.StatusOK)
+			md5Hash2 := md5.New()
+			md5Hash2.Write(r.Body.Bytes())
+			assert.Equal(t, md5Hash2.Sum(nil), md5Hash.Sum(nil))
+		})
+
+	r.DELETE("/s3/test/bb").
+		SetHeader(gofight.H{
+			vars.JWTHeader: "Bearer " + jwtToken,
+		}).
+		SetQuery(gofight.H{
+			"recursive": "",
+		}).
+		Run(routers.GetRouter(), func(r gofight.HTTPResponse, rq gofight.HTTPRequest) {
+			assert.Equal(t, r.Code, http.StatusNoContent)
+		})
+
+	r = gofight.New()
+	r.DELETE("/s3/test/cc").
+		SetHeader(gofight.H{
+			vars.JWTHeader: "Bearer " + jwtToken,
+		}).
+		Run(routers.GetRouter(), func(r gofight.HTTPResponse, rq gofight.HTTPRequest) {
+			assert.Equal(t, r.Code, http.StatusNoContent)
+		})
+
+	r = gofight.New()
+	r.GET("/s3/test/bb").
+		SetHeader(gofight.H{
+			vars.JWTHeader: "Bearer " + jwtToken,
+		}).
+		Run(routers.GetRouter(), func(r gofight.HTTPResponse, rq gofight.HTTPRequest) {
+			assert.Equal(t, r.Code, http.StatusNotFound)
+		})
+
+	r = gofight.New()
+	r.GET("/s3/test/cc").
 		SetHeader(gofight.H{
 			vars.JWTHeader: "Bearer " + jwtToken,
 		}).
@@ -116,7 +164,7 @@ func TestS3Handler_CopyObject(t *testing.T) {
 		})
 }
 
-func TestS3Handler_RecursiveCopyObject(t *testing.T) {
+func TestS3Handler_RecursiveMoveObjects(t *testing.T) {
 	vars.UnitTest = true
 	vars.Debug = true
 	log.InitLogger()
@@ -225,6 +273,7 @@ func TestS3Handler_RecursiveCopyObject(t *testing.T) {
 		}).
 		SetQuery(gofight.H{
 			"recursive": "",
+			"move":      "",
 		}).
 		Run(routers.GetRouter(), func(r gofight.HTTPResponse, rq gofight.HTTPRequest) {
 			assert.Equal(t, r.Code, http.StatusOK)
@@ -272,10 +321,7 @@ func TestS3Handler_RecursiveCopyObject(t *testing.T) {
 			vars.JWTHeader: "Bearer " + jwtToken,
 		}).
 		Run(routers.GetRouter(), func(r gofight.HTTPResponse, rq gofight.HTTPRequest) {
-			assert.Equal(t, r.Code, http.StatusOK)
-			md5Hash2 := md5.New()
-			md5Hash2.Write(r.Body.Bytes())
-			assert.Equal(t, md5Hash2.Sum(nil), md5Hash.Sum(nil))
+			assert.Equal(t, r.Code, http.StatusNotFound)
 		})
 
 	r = gofight.New()
@@ -284,10 +330,7 @@ func TestS3Handler_RecursiveCopyObject(t *testing.T) {
 			vars.JWTHeader: "Bearer " + jwtToken,
 		}).
 		Run(routers.GetRouter(), func(r gofight.HTTPResponse, rq gofight.HTTPRequest) {
-			assert.Equal(t, r.Code, http.StatusOK)
-			md5Hash2 := md5.New()
-			md5Hash2.Write(r.Body.Bytes())
-			assert.Equal(t, md5Hash2.Sum(nil), md5Hash.Sum(nil))
+			assert.Equal(t, r.Code, http.StatusNotFound)
 		})
 
 	r = gofight.New()

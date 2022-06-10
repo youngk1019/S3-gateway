@@ -1,7 +1,10 @@
 package api
 
+import "C"
 import (
 	"bytes"
+	"compress/gzip"
+	"context"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/render"
 	"github.com/minio/minio-go/v7"
@@ -12,6 +15,7 @@ import (
 	"net/http"
 	"s3-gateway/command/vars"
 	"s3-gateway/edu_backend"
+	"s3-gateway/full_path"
 	"s3-gateway/list_objects"
 	"s3-gateway/log"
 	"strings"
@@ -22,6 +26,7 @@ func S3Handler(c *gin.Context) {
 	method := c.Request.Method
 	params := c.Request.URL.Query()
 	object := c.Param("object")[1:]
+	fp := object
 
 	endpointSet := make(map[string]bool)
 	endpoint := vars.EndpointList[rand.Intn(len(vars.EndpointList))]
@@ -60,8 +65,11 @@ func S3Handler(c *gin.Context) {
 	//		}
 	//	}
 	//}
+	belong := ""
+	isPublic := false
 	if strings.ToLower(c.Request.Header.Get(vars.PublicKey)) == "true" {
-		if method == http.MethodPut || method == http.MethodPost {
+		isPublic = true
+		if method != http.MethodGet {
 			uname := c.Value(vars.UNAMEKey).(string)
 			check := false
 			for _, u := range vars.AdminList {
@@ -76,6 +84,8 @@ func S3Handler(c *gin.Context) {
 			}
 		}
 
+		belong = "public/"
+
 		dataSets, err := edu_backend.GetDataSet(c, c.Value(vars.UIDKey).(string))
 		if err != nil {
 			log.Errorw("get data set", vars.UUIDKey, c.Value(vars.UUIDKey), "error", err.Error())
@@ -84,12 +94,17 @@ func S3Handler(c *gin.Context) {
 		}
 
 		if object == "" && params.Get("prefix") == "" {
-			ret, err := list_objects.GenListObjectsResult(dataSets)
+			listRet, err := list_objects.GenListObjectsResult(dataSets)
 			if err != nil {
 				log.Errorw("get list objects result", vars.UUIDKey, c.Value(vars.UUIDKey), "error", err.Error())
 				c.String(http.StatusBadGateway, "gateway get data set")
 			}
-			c.Data(http.StatusOK, "text/xml", ret)
+			json, err := listRet.GenJson(belong, isPublic)
+			if err != nil {
+				log.Errorw("gen list objects json", vars.UUIDKey, c.Value(vars.UUIDKey), "error", err.Error())
+				c.String(http.StatusBadGateway, "gen list objects json")
+			}
+			c.Data(http.StatusOK, "application/json", json)
 			return
 		}
 
@@ -106,7 +121,6 @@ func S3Handler(c *gin.Context) {
 				c.String(http.StatusUnauthorized, "Do not have permission for this dataset: "+ret[0])
 				return
 			}
-			object = "public/" + object
 		}
 
 		if params.Has("prefix") {
@@ -124,9 +138,6 @@ func S3Handler(c *gin.Context) {
 					return
 				}
 			}
-			prefix := "public/" + params.Get("prefix")
-			params.Del("prefix")
-			params.Set("prefix", prefix)
 		}
 
 		if params.Has("start-after") {
@@ -144,39 +155,137 @@ func S3Handler(c *gin.Context) {
 					return
 				}
 			}
-			startAfter := "public/" + params.Get("start-after")
-			params.Del("start-after")
-			params.Set("start-after", startAfter)
-		}
-
-		if c.Request.Header.Get("x-amz-copy-source") != "" {
-			copySource := vars.Bucket + "/public/" + c.Request.Header.Get("x-amz-copy-source")
-			c.Request.Header.Del("x-amz-copy-source")
-			c.Request.Header.Set("x-amz-copy-source", copySource)
 		}
 
 	} else {
-		if object != "" {
-			object = "workplace/" + c.Value(vars.UIDKey).(string) + "/" + object
-		}
-		if params.Has("prefix") {
-			prefix := "workplace/" + c.Value(vars.UIDKey).(string) + "/" + params.Get("prefix")
-			params.Del("prefix")
-			params.Set("prefix", prefix)
-		}
-		if params.Has("start-after") {
-			startAfter := "workplace/" + c.Value(vars.UIDKey).(string) + "/" + params.Get("start-after")
-			params.Del("start-after")
-			params.Set("start-after", startAfter)
-		}
-		if c.Request.Header.Get("x-amz-copy-source") != "" {
-			copySource := vars.Bucket + "/workplace/" + c.Value(vars.UIDKey).(string) + "/" + c.Request.Header.Get("x-amz-copy-source")
-			c.Request.Header.Del("x-amz-copy-source")
-			c.Request.Header.Set("x-amz-copy-source", copySource)
-		}
+		belong = "workplace/" + c.Value(vars.UIDKey).(string) + "/"
 	}
 	c.Request.Header.Del(vars.PublicKey)
 
+	if object != "" {
+		object = belong + object
+	}
+	if params.Has("prefix") {
+		prefix := belong + params.Get("prefix")
+		params.Del("prefix")
+		params.Set("prefix", prefix)
+	}
+	if params.Has("start-after") {
+		startAfter := belong + params.Get("start-after")
+		params.Del("start-after")
+		params.Set("start-after", startAfter)
+	}
+	copySrc := ""
+	if c.Request.Header.Get("x-amz-copy-source") != "" {
+		if params.Has("move") || params.Has("recursive") {
+			copySrc = belong + c.Request.Header.Get("x-amz-copy-source")
+		}
+		copySource := vars.Bucket + "/" + belong + c.Request.Header.Get("x-amz-copy-source")
+		c.Request.Header.Del("x-amz-copy-source")
+		c.Request.Header.Set("x-amz-copy-source", copySource)
+	}
+
+	if (method == http.MethodPut && !params.Has("uploadId")) || (method == http.MethodPost && params.Has("uploadId")) {
+		dirs := full_path.SplitFullPath(fp)
+		for i, u := range dirs {
+			_, err := client.StatObject(c, vars.Bucket, belong+u, minio.StatObjectOptions{})
+			if err == nil {
+				err := client.RemoveObject(c, vars.Bucket, belong+u, minio.RemoveObjectOptions{GovernanceBypass: true})
+				if err != nil {
+					log.Errorw("delete object", vars.UUIDKey, c.Value(vars.UUIDKey), "error", err.Error())
+					c.String(http.StatusBadGateway, "gateway delete object")
+				}
+			}
+
+			if i != len(dirs)-1 {
+				_, err := client.StatObject(c, vars.Bucket, belong+u+"/", minio.StatObjectOptions{})
+				if err != nil {
+					_, err := client.PutObject(c, vars.Bucket, belong+u+"/", nil, 0, minio.PutObjectOptions{})
+					if err != nil {
+						log.Errorw("put object", vars.UUIDKey, c.Value(vars.UUIDKey), "error", err.Error())
+						c.String(http.StatusBadGateway, "gateway put object")
+					}
+				}
+			}
+		}
+
+		err := client.RemoveObject(c, vars.Bucket, belong+fp, minio.RemoveObjectOptions{GovernanceBypass: true})
+		if err != nil {
+			log.Errorw("delete object", vars.UUIDKey, c.Value(vars.UUIDKey), "error", err.Error())
+			c.String(http.StatusBadGateway, "gateway delete object")
+		}
+
+		if !strings.HasSuffix(fp, "/") {
+			err := recursiveDelete(c, client, belong+fp+"/", "/")
+			if err != nil {
+				c.String(http.StatusBadGateway, "gateway recursive delete error")
+				return
+			}
+		}
+	}
+
+	if params.Has("recursive") && method == http.MethodDelete {
+		err := recursiveDelete(c, client, object, params.Get("delimiter"))
+		if err != nil {
+			c.String(http.StatusBadGateway, "gateway recursive delete error")
+			return
+		}
+
+		c.Status(http.StatusNoContent)
+		return
+	}
+
+	if params.Has("recursive") && method == http.MethodPut && c.Request.Header.Get("x-amz-copy-source") != "" {
+		objectsCh := make(chan minio.ObjectInfo)
+		err := error(nil)
+
+		// Send object names that are needed to be removed to objectsCh
+		go func() {
+			defer close(objectsCh)
+			// List all objects from a bucket-name with a matching prefix.
+			for object := range client.ListObjects(c, vars.Bucket, minio.ListObjectsOptions{Prefix: copySrc, Recursive: true}) {
+				if object.Err != nil {
+					log.Errorw("s3 gateway recursive delete list objects error", vars.UUIDKey, c.Value(vars.UUIDKey), "error", object.Err.Error())
+					err = object.Err
+					return
+				}
+				objectsCh <- object
+			}
+		}()
+
+		for obj := range objectsCh {
+			if !strings.HasPrefix(obj.Key, copySrc) {
+				log.Errorw("s3 gateway copy error prefix", vars.UUIDKey, c.Value(vars.UUIDKey))
+				c.String(http.StatusBadGateway, "gateway copy error")
+			}
+			suffix := obj.Key[len(copySrc):]
+			_, err := client.CopyObject(c, minio.CopyDestOptions{Bucket: vars.Bucket, Object: object + suffix}, minio.CopySrcOptions{Bucket: vars.Bucket, Object: obj.Key})
+			if err != nil {
+				log.Errorw("s3 gateway copy error", vars.UUIDKey, c.Value(vars.UUIDKey), "error", err.Error())
+				c.String(http.StatusBadGateway, "gateway copy error")
+				return
+			}
+		}
+
+		if err != nil {
+			log.Errorw("s3 gateway recursive copy", vars.UUIDKey, c.Value(vars.UUIDKey), "error", err.Error())
+			c.String(http.StatusBadGateway, "gateway recursive copy error")
+			return
+		}
+
+		if params.Has("move") {
+			err := recursiveDelete(c, client, copySrc, params.Get("delimiter"))
+			if err != nil {
+				c.String(http.StatusBadGateway, "gateway recursive delete error")
+				return
+			}
+		}
+
+		c.Status(http.StatusOK)
+		return
+	}
+
+	params.Del("move")
 	url, err := client.PresignHeader(c, method, vars.Bucket, object, 86400*time.Second, params, c.Request.Header)
 	if err != nil {
 		log.Errorw("presign failed", vars.UUIDKey, c.Value(vars.UUIDKey), "error", err.Error())
@@ -211,6 +320,47 @@ func S3Handler(c *gin.Context) {
 		return
 	}
 
+	if copySrc != "" && resp.StatusCode == http.StatusOK && method == http.MethodPut {
+		err := client.RemoveObject(c, vars.Bucket, copySrc, minio.RemoveObjectOptions{GovernanceBypass: true})
+		if err != nil {
+			log.Errorw("remove object", vars.UUIDKey, c.Value(vars.UUIDKey), "error", err.Error())
+			c.String(http.StatusBadGateway, "gateway move copy object")
+			return
+		}
+	}
+
+	if method == http.MethodGet && params.Has("prefix") && params.Get("list-type") == "2" && resp.StatusCode == http.StatusOK {
+		var reader io.Reader
+		if resp.Header.Get("Content-Encoding") == "gzip" {
+			reader, err = gzip.NewReader(resp.Body)
+			if err != nil {
+				log.Errorw("new gzip reader", vars.UUIDKey, c.Value(vars.UUIDKey), "error", err.Error())
+				c.String(http.StatusBadGateway, "new gzip reader")
+			}
+		} else {
+			reader = resp.Body
+		}
+
+		b, err := io.ReadAll(reader)
+		if err != nil {
+			log.Errorw("read http body", vars.UUIDKey, c.Value(vars.UUIDKey), "error", err.Error())
+			c.String(http.StatusBadGateway, "gateway read http body")
+		}
+		objects, err := list_objects.UnmarshalListObjects(b)
+		if err != nil {
+			log.Errorw("unmarshal list objects xml", vars.UUIDKey, c.Value(vars.UUIDKey), "error", err.Error())
+			c.String(http.StatusBadGateway, "unmarshal list objects xml")
+			return
+		}
+		json, err := objects.GenJson(belong, isPublic)
+		if err != nil {
+			log.Errorw("gen list objects json", vars.UUIDKey, c.Value(vars.UUIDKey), "error", err.Error())
+			c.String(http.StatusBadGateway, "gen list objects json")
+			return
+		}
+		c.Data(http.StatusOK, "application/json", json)
+	}
+
 	//c.Status(resp.StatusCode)
 	//_, err = io.Copy(c.Writer, resp.Body)
 	//if err != nil {
@@ -223,6 +373,14 @@ func S3Handler(c *gin.Context) {
 	//		c.Writer.Header().Add(k, v)
 	//	}
 	//}
+	if method == http.MethodHead {
+		if resp.StatusCode == http.StatusOK {
+			c.String(http.StatusOK, "text/plain", "true")
+		} else {
+			c.String(http.StatusOK, "text/plain", "false")
+		}
+		return
+	}
 
 	header := make(map[string]string)
 	for k, _ := range resp.Header {
@@ -235,4 +393,42 @@ func S3Handler(c *gin.Context) {
 		Reader:        resp.Body,
 	})
 	return
+}
+
+func recursiveDelete(ctx context.Context, client *minio.Client, prefix string, delimiter string) error {
+	if strings.HasSuffix(prefix, delimiter) {
+		err := client.RemoveObject(ctx, vars.Bucket, prefix[:len(prefix)-1-len(delimiter)], minio.RemoveObjectOptions{GovernanceBypass: true})
+		if err != nil {
+			log.Errorw("s3 gateway delete same name object", vars.UUIDKey, ctx.Value(vars.UUIDKey), "error", err.Error())
+			return err
+		}
+	}
+
+	objectsCh := make(chan minio.ObjectInfo)
+	err := error(nil)
+
+	// Send object names that are needed to be removed to objectsCh
+	go func() {
+		defer close(objectsCh)
+		// List all objects from a bucket-name with a matching prefix.
+		for object := range client.ListObjects(ctx, vars.Bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true}) {
+			if object.Err != nil {
+				log.Errorw("s3 gateway recursive delete list objects error", vars.UUIDKey, ctx.Value(vars.UUIDKey), "error", object.Err.Error())
+				err = object.Err
+				return
+			}
+			objectsCh <- object
+		}
+	}()
+
+	for rErr := range client.RemoveObjects(ctx, vars.Bucket, objectsCh, minio.RemoveObjectsOptions{GovernanceBypass: true}) {
+		log.Errorw("s3 gateway detected during deletion", vars.UUIDKey, ctx.Value(vars.UUIDKey), "error", rErr.Err.Error())
+		return rErr.Err
+	}
+
+	if err != nil {
+		log.Errorw("s3 gateway recursive delete list objects error", vars.UUIDKey, ctx.Value(vars.UUIDKey), "error", err.Error())
+		return err
+	}
+	return nil
 }

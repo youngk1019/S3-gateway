@@ -2,7 +2,10 @@ package list_objects
 
 import (
 	"encoding/xml"
+	"fmt"
+	jsoniter "github.com/json-iterator/go"
 	"s3-gateway/command/vars"
+	"strings"
 )
 
 type ListBucketResult struct {
@@ -49,7 +52,7 @@ func UnmarshalListObjects(b []byte) (*ListBucketResult, error) {
 	return ret, nil
 }
 
-func GenListObjectsResult(dataset []string) ([]byte, error) {
+func GenListObjectsResult(dataset []string) (*ListBucketResult, error) {
 	ret := &ListBucketResult{}
 	ret.XMLName.Space = "http://s3.amazonaws.com/doc/2006-03-01/"
 	ret.XMLName.Local = "ListBucketResult"
@@ -67,6 +70,85 @@ func GenListObjectsResult(dataset []string) ([]byte, error) {
 		commonPrefixes = append(commonPrefixes, commonPrefix)
 	}
 	ret.CommonPrefixes = commonPrefixes
+	return ret, nil
+}
 
-	return xml.Marshal(ret)
+type ListResult struct {
+	IsTruncated           bool     `json:"IsTruncated"`
+	KeyCount              int      `json:"KeyCount"`
+	ContinuationToken     string   `json:"ContinuationToken"`
+	NextContinuationToken string   `json:"NextContinuationToken"`
+	Prefix                string   `json:"Prefix"`
+	Delimiter             string   `json:"Delimiter"`
+	StartAfter            string   `json:"StartAfter"`
+	IsPublic              bool     `json:"IsPublic"`
+	MaxKeys               int      `json:"MaxKeys"`
+	Objects               []Object `json:"Objects"`
+}
+
+type Object struct {
+	FullPath     string `json:"FullPath"`
+	Name         string `json:"Name"`
+	LastModified string `json:"LastModified"`
+	Size         int    `json:"Size"`
+	IsDirectory  bool   `json:"IsDirectory"`
+}
+
+var BelongErr = fmt.Errorf("list object belong match failed")
+
+func (list *ListBucketResult) GenJson(belong string, isPublic bool) ([]byte, error) {
+	ret := &ListResult{}
+	if strings.HasPrefix(list.Prefix, belong) {
+		ret.Prefix = list.Prefix[len(belong):]
+	} else {
+		return nil, BelongErr
+	}
+	ret.IsPublic = isPublic
+	ret.ContinuationToken = list.ContinuationToken
+	ret.NextContinuationToken = list.NextContinuationToken
+	ret.Delimiter = list.Delimiter
+	ret.MaxKeys = list.MaxKeys
+	if list.StartAfter != "" {
+		if strings.HasPrefix(list.StartAfter, belong) {
+			ret.StartAfter = list.StartAfter[len(belong):]
+		} else {
+			return nil, BelongErr
+		}
+	}
+	ret.IsTruncated = list.IsTruncated
+	objects := make([]Object, 0)
+	for _, u := range list.Contents {
+		var obj Object
+		if strings.HasPrefix(u.Key, belong) {
+			obj.FullPath = u.Key[len(belong):]
+		} else {
+			return nil, BelongErr
+		}
+		if obj.FullPath == ret.Prefix {
+			continue
+		}
+		obj.Size = u.Size
+		obj.LastModified = u.LastModified
+		obj.IsDirectory = false
+		names := strings.Split(obj.FullPath, ret.Delimiter)
+		obj.Name = names[len(names)-1]
+		objects = append(objects, obj)
+		ret.KeyCount++
+	}
+	for _, u := range list.CommonPrefixes {
+		var obj Object
+		if strings.HasPrefix(u.Prefix, belong) {
+			obj.FullPath = u.Prefix[len(belong):]
+		} else {
+			return nil, BelongErr
+		}
+		obj.Size = 0
+		obj.IsDirectory = true
+		names := strings.Split(obj.FullPath, ret.Delimiter)
+		obj.Name = names[len(names)-2]
+		objects = append(objects, obj)
+		ret.KeyCount++
+	}
+	ret.Objects = objects
+	return jsoniter.Marshal(ret)
 }
