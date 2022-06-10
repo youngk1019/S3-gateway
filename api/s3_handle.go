@@ -185,7 +185,7 @@ func S3Handler(c *gin.Context) {
 		c.Request.Header.Set("x-amz-copy-source", copySource)
 	}
 
-	if params.Has("is-exist") {
+	if method == http.MethodGet && params.Has("is-exist") {
 		_, err := client.StatObject(c, vars.Bucket, object, minio.StatObjectOptions{})
 		if err != nil {
 			c.String(http.StatusOK, "false")
