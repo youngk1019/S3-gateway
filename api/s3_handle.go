@@ -188,9 +188,9 @@ func S3Handler(c *gin.Context) {
 	if params.Has("is-exist") {
 		_, err := client.StatObject(c, vars.Bucket, object, minio.StatObjectOptions{})
 		if err != nil {
-			c.String(http.StatusOK, "text/plain", "false")
+			c.String(http.StatusOK, "false")
 		} else {
-			c.String(http.StatusOK, "text/plain", "true")
+			c.String(http.StatusOK, "true")
 		}
 		return
 	}
