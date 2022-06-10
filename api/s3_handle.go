@@ -291,6 +291,17 @@ func S3Handler(c *gin.Context) {
 			}
 		}
 
+		if strings.HasSuffix(object, "/") {
+			_, err := client.StatObject(c, vars.Bucket, copySrc, minio.StatObjectOptions{})
+			if err != nil {
+				_, err := client.PutObject(c, vars.Bucket, copySrc, nil, 0, minio.PutObjectOptions{})
+				if err != nil {
+					log.Errorw("put object", vars.UUIDKey, c.Value(vars.UUIDKey), "error", err.Error())
+					c.String(http.StatusBadGateway, "gateway put object")
+				}
+			}
+		}
+
 		c.Status(http.StatusOK)
 		return
 	}
