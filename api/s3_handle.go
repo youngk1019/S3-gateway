@@ -195,6 +195,51 @@ func S3Handler(c *gin.Context) {
 		return
 	}
 
+	if method == http.MethodGet && params.Has("calc-sum") {
+		objectsCh := make(chan minio.ObjectInfo)
+		err := error(nil)
+
+		// Send object names that are needed to be removed to objectsCh
+		go func() {
+			defer close(objectsCh)
+			// List all objects from a bucket-name with a matching prefix.
+			for object := range client.ListObjects(c, vars.Bucket, minio.ListObjectsOptions{Prefix: object, Recursive: true}) {
+				if object.Err != nil {
+					log.Errorw("s3 gateway recursive delete list objects error", vars.UUIDKey, c.Value(vars.UUIDKey), "error", object.Err.Error())
+					err = object.Err
+					return
+				}
+				objectsCh <- object
+			}
+		}()
+
+		fileSize := int64(0)
+		fileNum := int64(0)
+		dirNum := int64(0)
+
+		for obj := range objectsCh {
+			if strings.HasSuffix(obj.Key, "/") && obj.Size == 0 {
+				dirNum++
+			} else {
+				fileNum++
+			}
+			fileSize += obj.Size
+		}
+
+		if err != nil {
+			log.Errorw("list objects", vars.UUIDKey, c.Value(vars.UUIDKey), "error", err.Error())
+			c.String(http.StatusBadGateway, "gateway list objects")
+		}
+
+		c.JSON(http.StatusOK,
+			gin.H{
+				"FileSize": fileSize,
+				"FileNum":  fileNum,
+				"DirNum":   dirNum,
+			})
+		return
+	}
+
 	if (method == http.MethodPut && !params.Has("uploadId")) || (method == http.MethodPost && params.Has("uploadId")) {
 		dirs := full_path.SplitFullPath(fp)
 		for i, u := range dirs {
@@ -204,6 +249,7 @@ func S3Handler(c *gin.Context) {
 				if err != nil {
 					log.Errorw("delete object", vars.UUIDKey, c.Value(vars.UUIDKey), "error", err.Error())
 					c.String(http.StatusBadGateway, "gateway delete object")
+					return
 				}
 			}
 
@@ -214,6 +260,7 @@ func S3Handler(c *gin.Context) {
 					if err != nil {
 						log.Errorw("put object", vars.UUIDKey, c.Value(vars.UUIDKey), "error", err.Error())
 						c.String(http.StatusBadGateway, "gateway put object")
+						return
 					}
 				}
 			}
@@ -223,6 +270,7 @@ func S3Handler(c *gin.Context) {
 		if err != nil {
 			log.Errorw("delete object", vars.UUIDKey, c.Value(vars.UUIDKey), "error", err.Error())
 			c.String(http.StatusBadGateway, "gateway delete object")
+			return
 		}
 
 		if !strings.HasSuffix(fp, "/") {
@@ -267,6 +315,7 @@ func S3Handler(c *gin.Context) {
 			if !strings.HasPrefix(obj.Key, copySrc) {
 				log.Errorw("s3 gateway copy error prefix", vars.UUIDKey, c.Value(vars.UUIDKey))
 				c.String(http.StatusBadGateway, "gateway copy error")
+				return
 			}
 			suffix := obj.Key[len(copySrc):]
 			_, err := client.CopyObject(c, minio.CopyDestOptions{Bucket: vars.Bucket, Object: object + suffix}, minio.CopySrcOptions{Bucket: vars.Bucket, Object: obj.Key})
@@ -298,6 +347,7 @@ func S3Handler(c *gin.Context) {
 				if err != nil {
 					log.Errorw("put object", vars.UUIDKey, c.Value(vars.UUIDKey), "error", err.Error())
 					c.String(http.StatusBadGateway, "gateway put object")
+					return
 				}
 			}
 		}
@@ -357,6 +407,7 @@ func S3Handler(c *gin.Context) {
 			if err != nil {
 				log.Errorw("new gzip reader", vars.UUIDKey, c.Value(vars.UUIDKey), "error", err.Error())
 				c.String(http.StatusBadGateway, "new gzip reader")
+				return
 			}
 		} else {
 			reader = resp.Body
@@ -366,6 +417,7 @@ func S3Handler(c *gin.Context) {
 		if err != nil {
 			log.Errorw("read http body", vars.UUIDKey, c.Value(vars.UUIDKey), "error", err.Error())
 			c.String(http.StatusBadGateway, "gateway read http body")
+			return
 		}
 		objects, err := list_objects.UnmarshalListObjects(b)
 		if err != nil {
@@ -380,6 +432,7 @@ func S3Handler(c *gin.Context) {
 			return
 		}
 		c.Data(http.StatusOK, "application/json", json)
+		return
 	}
 
 	//c.Status(resp.StatusCode)

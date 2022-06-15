@@ -1,7 +1,7 @@
 package jwt
 
 import (
-	"github.com/dgrijalva/jwt-go"
+	"github.com/golang-jwt/jwt"
 	"net/http"
 	"s3-gateway/command/vars"
 	"strings"
