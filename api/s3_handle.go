@@ -198,6 +198,9 @@ func S3Handler(c *gin.Context) {
 	if method == http.MethodGet && params.Has("calc-sum") {
 		objectsCh := make(chan minio.ObjectInfo)
 		err := error(nil)
+		if object == "" {
+			object = belong
+		}
 
 		// Send object names that are needed to be removed to objectsCh
 		go func() {
@@ -283,6 +286,10 @@ func S3Handler(c *gin.Context) {
 	}
 
 	if params.Has("recursive") && method == http.MethodDelete {
+		if object == "" {
+			object = belong
+		}
+
 		err := recursiveDelete(c, client, object, params.Get("delimiter"))
 		if err != nil {
 			c.String(http.StatusBadGateway, "gateway recursive delete error")
@@ -296,6 +303,9 @@ func S3Handler(c *gin.Context) {
 	if params.Has("recursive") && method == http.MethodPut && c.Request.Header.Get("x-amz-copy-source") != "" {
 		objectsCh := make(chan minio.ObjectInfo)
 		err := error(nil)
+		if object == "" {
+			object = belong
+		}
 
 		// Send object names that are needed to be removed to objectsCh
 		go func() {
