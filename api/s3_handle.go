@@ -188,12 +188,14 @@ func S3Handler(c *gin.Context) {
 	if method == http.MethodGet && params.Has("is-exist") {
 		_, err := client.StatObject(c, vars.Bucket, object, minio.StatObjectOptions{})
 		if err != nil {
-			for _ = range client.ListObjects(c, vars.Bucket, minio.ListObjectsOptions{
-				Prefix:  object,
-				MaxKeys: 50,
-			}) {
-				c.String(http.StatusOK, "true")
-				return
+			if strings.HasSuffix(object, "/") {
+				for _ = range client.ListObjects(c, vars.Bucket, minio.ListObjectsOptions{
+					Prefix:  object,
+					MaxKeys: 50,
+				}) {
+					c.String(http.StatusOK, "true")
+					return
+				}
 			}
 			c.String(http.StatusOK, "false")
 		} else {
