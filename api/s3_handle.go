@@ -18,6 +18,7 @@ import (
 	"s3-gateway/full_path"
 	"s3-gateway/list_objects"
 	"s3-gateway/log"
+	"s3-gateway/util"
 	"strings"
 	"time"
 )
@@ -201,6 +202,68 @@ func S3Handler(c *gin.Context) {
 		} else {
 			c.String(http.StatusOK, "true")
 		}
+		return
+	}
+
+	if method == http.MethodGet && params.Has("prefix") && params.Has("tree") {
+		delimiter := params.Get("delimiter")
+		prefix := params.Get("prefix")
+		prefix2 := prefix[len(belong):]
+
+		objectsCh := make(chan minio.ObjectInfo)
+		err := error(nil)
+		go func() {
+			defer close(objectsCh)
+			// List all objects from a bucket-name with a matching prefix.
+			for object := range client.ListObjects(c, vars.Bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true}) {
+				if object.Err != nil {
+					log.Errorw("s3 gateway recursive delete list objects error", vars.UUIDKey, c.Value(vars.UUIDKey), "error", object.Err.Error())
+					err = object.Err
+					return
+				}
+				objectsCh <- object
+			}
+		}()
+
+		names := strings.Split(prefix2, delimiter)
+		name := ""
+		if names[len(names)-1] == "" && len(names) >= 2 {
+			name = names[len(names)-2]
+		} else {
+			name = names[len(names)-1]
+		}
+
+		trie := util.NewTrie[string](name)
+
+		for obj := range objectsCh {
+			key := strings.Split(obj.Key[len(prefix):], delimiter)
+			ret := make([]string, 0)
+			for _, u := range key {
+				if u != "" {
+					ret = append(ret, u)
+				}
+			}
+			trie.Insert(key[len(key)-1] != "", ret...)
+		}
+
+		if err != nil {
+			log.Errorw("list objects", vars.UUIDKey, c.Value(vars.UUIDKey), "error", err.Error())
+			c.String(http.StatusBadGateway, "gateway list objects")
+		}
+
+		if strings.HasSuffix(prefix2, name) {
+			prefix2 = prefix2[:len(prefix2)-len(name)]
+		} else if len(prefix2)-len(name)-len(delimiter) >= 0 {
+			prefix2 = prefix2[:len(prefix2)-len(name)-len(delimiter)]
+		}
+
+		ret := list_objects.BuildObjectTree(trie, prefix2, delimiter)
+		c.JSON(
+			http.StatusOK,
+			gin.H{
+				"data": ret,
+			},
+		)
 		return
 	}
 

@@ -539,3 +539,39 @@ func TestS3Handler_ListObject(t *testing.T) {
 			//assert.Equal(t, ret.CommonPrefixes[0].Prefix, "public/BasicDatasets/")
 		})
 }
+
+func TestS3Handler_ObjectTree(t *testing.T) {
+	vars.UnitTest = true
+	vars.Debug = true
+	log.InitLogger()
+	defer log.Sync()
+	routers.InitRouter()
+
+	r := gofight.New()
+	r.GET("/s3/").
+		SetHeader(gofight.H{
+			vars.JWTHeader: "Bearer " + jwtToken,
+		}).
+		SetQuery(gofight.H{
+			"tree":      "",
+			"prefix":    "",
+			"delimiter": "/",
+		}).
+		Run(routers.GetRouter(), func(r gofight.HTTPResponse, rq gofight.HTTPRequest) {
+			println(r.Body.String())
+		})
+
+	r = gofight.New()
+	r.GET("/s3/").
+		SetHeader(gofight.H{
+			vars.JWTHeader: "Bearer " + jwtToken,
+		}).
+		SetQuery(gofight.H{
+			"tree":      "",
+			"prefix":    "aaa/",
+			"delimiter": "/",
+		}).
+		Run(routers.GetRouter(), func(r gofight.HTTPResponse, rq gofight.HTTPRequest) {
+			println(r.Body.String())
+		})
+}
