@@ -567,6 +567,21 @@ func TestS3Handler_ObjectTree(t *testing.T) {
 			vars.JWTHeader: "Bearer " + jwtToken,
 		}).
 		SetQuery(gofight.H{
+			"tree":       "",
+			"prefix":     "",
+			"delimiter":  "/",
+			"filterFile": "true",
+		}).
+		Run(routers.GetRouter(), func(r gofight.HTTPResponse, rq gofight.HTTPRequest) {
+			println(r.Body.String())
+		})
+
+	r = gofight.New()
+	r.GET("/s3/").
+		SetHeader(gofight.H{
+			vars.JWTHeader: "Bearer " + jwtToken,
+		}).
+		SetQuery(gofight.H{
 			"tree":      "",
 			"prefix":    "aaa/",
 			"delimiter": "/",

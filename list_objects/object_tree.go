@@ -35,3 +35,23 @@ func BuildObjectTree(t *util.Trie[string], prefix, delimiter string) ObjectTree 
 
 	return ret
 }
+
+func FilterFile(obj ObjectTree) ObjectTree {
+	ret := ObjectTree{
+		Label:       obj.Label,
+		FilePath:    obj.FilePath,
+		IsDirectory: obj.IsDirectory,
+	}
+
+	ch := make([]ObjectTree, 0)
+	for _, u := range obj.Children {
+		if u.IsDirectory == true {
+			ch = append(ch, FilterFile(u))
+		}
+	}
+
+	if len(ch) != 0 {
+		ret.Children = ch
+	}
+	return ret
+}

@@ -258,6 +258,11 @@ func S3Handler(c *gin.Context) {
 		}
 
 		ret := list_objects.BuildObjectTree(trie, prefix2, delimiter)
+
+		if strings.ToLower(params.Get("filterFile")) == "true" {
+			ret = list_objects.FilterFile(ret)
+		}
+
 		c.JSON(
 			http.StatusOK,
 			gin.H{
